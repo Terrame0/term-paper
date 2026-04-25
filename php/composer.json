@@ -1,0 +1,10 @@
+{
+    "name": "term-paper/php-server",
+    "description": "a php server >_>",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.0",
+        "phpoffice/phpspreadsheet": "5.7.0"
+    }
+}
