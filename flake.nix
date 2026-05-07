@@ -8,29 +8,25 @@
     ...
   }: let
     system = "x86_64-linux";
-    pkgs = import nixpkgs {system = system;};
+    pkgs = import nixpkgs {inherit system;};
     lib = pkgs.lib;
     my-lib =
-      lib.foldl (
-        acc: path:
-          acc
-          // (import path {
-            inherit pkgs;
-            inherit lib;
-            inherit my-lib;
-          })
-      ) {}
+      lib.foldl (acc: path: acc // (import path args)) {}
       (lib.filesystem.listFilesRecursive ./nix/my-lib);
+    args = {
+      inherit pkgs;
+      inherit lib;
+      inherit my-lib;
+    };
     modules = lib.forEach (lib.filesystem.listFilesRecursive ./nix/modules) (
       path:
-        import path {
-          server-config = import ./server-config.nix;
-          tmp-dir = "/tmp/term-project";
-          inherit pkgs;
-          inherit lib;
-          inherit my-lib;
-          flake-root = lib.traceValSeq self.outPath;
-        }
+        import path ({
+            server-config = import ./server-config.nix;
+            tmp-dir = "/tmp/term-project";
+            pgschema = import ./nix/modules/pgschema.nix args;
+            flake-root = lib.traceValSeq self.outPath;
+          }
+          // args)
     );
     server = my-lib.mk-script-union {
       pname = "server";
@@ -48,17 +44,10 @@
         '';
       };
     };
-    server-root =
-      (import ./php/project.nix)
-      {
-        inherit pkgs;
-        flake-root = self.outPath;
-      };
   in {
-    packages.${system}.default = server-root;
     devShells.${system}.default = pkgs.mkShell {
       name = "web-stack";
-      buildInputs = [server pkgs.phpPackages.composer];
+      buildInputs = [server pkgs.postgresql] ++ modules;
     };
   };
 }

@@ -43,8 +43,11 @@ in
     scripts = my-lib.mk-worker-scripts {
       name = "nginx";
       dir = ngx-dir;
-      run-command = ''
+      start-command = ''
         nginx -p "${ngx-dir}" -c "${config}"
+      '';
+      stop-command = ''
+        nginx -p "${ngx-dir}" -c "${config}" -s quit
       '';
       pid-file = ngx-pid;
     };

@@ -2,6 +2,7 @@
   pkgs,
   my-lib,
   server-config,
+  pgschema,
   ...
 }:
 with server-config;
@@ -10,7 +11,7 @@ with server-config;
     deps = [
       pkgs.postgresql
     ];
-    scripts = my-lib.mk-worker-scripts {
+    scripts = my-lib.mk-worker-scripts rec {
       name = "postgres";
       init-command = ''
         initdb -D "${pg-data-dir}"
@@ -21,10 +22,16 @@ with server-config;
           echo "unix_socket_permissions = 0700";
           echo "external_pid_file = '${pg-pid}'";
         } >> "${pg-data-dir}/postgresql.conf"
+        # createuser -h "${pg-socket-dir}" ${db-user}
+        # createdb -h "${pg-socket-dir}" -O ${db-user} ${db-name}
+        # psql -h "${pg-socket-dir}" -U ${db-user} -d ${db-name} -f ${pgschema}
       '';
       dir = pg-dir;
-      run-command = ''
+      start-command = ''
         pg_ctl -D "${pg-data-dir}" -l "${pg-log}" start
+      '';
+      stop-command = ''
+        pg_ctl -D "${pg-data-dir}" stop
       '';
       pid-file = pg-pid;
     };

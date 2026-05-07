@@ -8,6 +8,8 @@ rec {
   pg-socket-dir = "${pg-dir}/sockets";
   pg-log = "${pg-dir}/pg.log";
   pg-pid = "${pg-dir}/pg.pid";
+  db-user = "main-user";
+  db-name = "main-db";
 
   # -- nginx parameters
   ngx-server-name = "term-paper";
