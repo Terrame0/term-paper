@@ -35,7 +35,6 @@ with server-config; let
         }
       }
     '';
-  #index main.php;
 in
   my-lib.mk-script-union {
     pname = "nginx-mgr";
