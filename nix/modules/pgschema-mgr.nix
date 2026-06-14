@@ -55,8 +55,8 @@ in
             fi
           }
 
-          apply_one "${production-db-name}" "${flake-root}/production-db-ddl.sql"
-          apply_one "${test-db-name}"       "${flake-root}/test-db-ddl.sql"
+          apply_one "${production-db-name}" "${flake-root}/schemas/production-db-ddl.sql"
+          apply_one "${test-db-name}"       "${flake-root}/schemas/test-db-ddl.sql"
 
           rm -f plan.json
         '';
