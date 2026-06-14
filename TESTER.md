@@ -2,21 +2,20 @@
 
 ## Контекст
 
-Преподаватель хочет видеть реальный use-case БД — конкурентную нагрузку, а не только схему. Решение: Python-приложение, которое имитирует параллельных клиентов, бьёт по основной БД, складывает результаты тестов в **отдельную** БД, PHP-фронт показывает статистику. Тестовые таблицы вынесены в свою БД, чтобы основная схема (`promotions-db`) оставалась чистой.
+Преподаватель хочет видеть реальный use-case БД — конкурентную нагрузку, а не только схему. Решение: Python-приложение, которое имитирует параллельных клиентов, бьёт по основной БД, складывает результаты тестов в **отдельную** БД, PHP-фронт показывает статистику. Тестовые таблицы вынесены в свою БД, чтобы основная схема (`production-db`) оставалась чистой.
 
 ## Структура
 
 ```
 term-paper/
-├── promotions-db-ddl.sql         (переименовать из db-ddl.sql)
-├── test-results-db-ddl.sql       (новый — схема для результатов тестов)
+├── production-db-ddl.sql         (переименовать из db-ddl.sql)
+├── test-db-ddl.sql               (новый — схема для результатов тестов)
 ├── php/                          (есть)
 ├── nix/                          (есть)
 └── python/                       (новое)
     ├── src/
-    │   └── main.py
-    ├── scenarios/
-    │   └── basic.json
+    │   ├── main.py
+    │   └── scenarios.py          (захардкоженные сценарии)
     ├── pyproject.toml
     └── project.nix
 ```
@@ -27,67 +26,78 @@ term-paper/
 
 | БД | Назначение | DDL |
 |---|---|---|
-| `promotions-db` | основная схема (client, promotion, ...) | `promotions-db-ddl.sql` |
-| `test-results-db` | таблицы с результатами тестов | `test-results-db-ddl.sql` |
+| `production-db` | основная схема (client, promotion, ...) | `production-db-ddl.sql` |
+| `test-db` | таблицы с результатами тестов | `test-db-ddl.sql` |
 
 Необходимые правки в существующем коде (за пределами этого ТЗ — делать отдельно):
-- `db-ddl.sql` → `promotions-db-ddl.sql`
-- [server-config.nix](server-config.nix): вместо `db-name = "test"` добавить `promotions-db-name = "promotions-db"` и `test-results-db-name = "test-results-db"`
-- [nix/modules/pgschema-mgr.nix](nix/modules/pgschema-mgr.nix): применять оба DDL — по одному `pgschema apply` на каждую БД
-- [php/src/main.php](php/src/main.php): подключаться к `promotions-db`
-- Новый `php/src/tests.php`: подключаться к `test-results-db`
+- `db-ddl.sql` → `production-db-ddl.sql`
+- [server-config.nix](server-config.nix): вместо `db-name = "test"` добавить `production-db-name = "production-db"` и `test-db-name = "test-db"`
+- [nix/modules/pgschema-mgr.nix](nix/modules/pgschema-mgr.nix): применять оба DDL — по одному `pgschema apply` на каждую БД (обновить **обе** ссылки на `db-name`)
+- [php/src/main.php](php/src/main.php): подключаться к `production-db`
+- Новый `php/src/tests.php`: подключаться к `test-db`
+- Старый `/tmp/term-paper` снести перед первым запуском (миграции не делаем)
 
 ## Функциональность
 
-CLI-команда `db-tester`:
+CLI-команда `db-tester` (все флаги обязательные, без дефолтов):
 
 ```
-db-tester --workers N --ops-per-worker M --scenario scenarios/basic.json
+db-tester --workers N --ops-per-worker M --scenario basic
 ```
+
+Параметры подключения берутся из env vars (см. секцию «Параметры подключения»). Сценарии захардкожены в `src/scenarios.py` (словарь `SCENARIOS: dict[str, list[Op]]`), `--scenario` — это просто ключ из этого словаря.
 
 Поведение:
-1. Запускает `N` параллельных корутин-воркеров
-2. Каждый воркер **сам открывает своё соединение** к `promotions-db` через `asyncpg.connect(...)`, держит его весь прогон, в конце закрывает. Моделирует долгоживущего клиента (одна сессия — одно соединение)
-3. Воркер выполняет `M` операций из сценария (случайный выбор операции с учётом весов)
-4. Latency каждой операции замеряется обёрткой вокруг `await connection.execute(...)` через `time.perf_counter()`
-5. После того как все воркеры завершились, главная корутина открывает одно соединение к `test-results-db` и пишет агрегат в `test_run` + детали по воркерам в `test_worker_result`
+1. **Очистка `production-db`** перед прогоном: `TRUNCATE client CASCADE` (каскадно сносит promotion, address, phone, email и все promotion_*). Каждый прогон — с чистого листа
+2. Запускает `N` параллельных корутин-воркеров
+3. Каждый воркер **сам открывает своё соединение** к `production-db` через `asyncpg.connect(..., command_timeout=5)`, держит весь прогон, в конце закрывает. Моделирует долгоживущего клиента (одна сессия — одно соединение)
+4. Воркер выполняет `M` операций из сценария (случайный выбор операции с учётом весов). На SQL-ошибке (исключения `asyncpg.exceptions.*`) воркер **продолжает работу**, инкрементирует свой счётчик `errors`. Latency упавшей операции **включается** в общую статистику (это часть реального поведения)
+5. После того как все воркеры завершились, главная корутина открывает одно соединение к `test-db` и пишет агрегат в `test_run` + детали по воркерам в `test_worker_result`. `test_run.errors_count = SUM(test_worker_result.errors)`
 6. Печатает в stdout короткий статус (`run #42: 10 workers, 1000 ops, 234ms, 0 errors`)
 
-## Сценарий нагрузки
+Замечание про перцентили: при малом `--ops-per-worker` (меньше ~100) `p99` будет шумным. Для осмысленных p95/p99 ставить минимум 100 операций на воркера.
 
-Сценарий описывается **JSON-файлом** (`json` в stdlib Python).
+## Сценарии нагрузки
 
-Структура: список операций, каждая со своим SQL и весом. Воркер на каждом шаге случайно выбирает операцию пропорционально весу. Все операции самодостаточны (не зависят от состояния между ними) — для вставки используются генераторы значений на стороне SQL (`gen_random_uuid`, `NOW()`, `RANDOM()`), для чтения — `ORDER BY RANDOM() LIMIT N`.
+Сценарии живут в `src/scenarios.py` как словарь `SCENARIOS: dict[str, list[Op]]`, где `Op` — `dataclass` с полями `name: str`, `weight: int`, `sql: str`.
 
-Пример `python/scenarios/basic.json`:
+Воркер на каждом шаге случайно выбирает операцию пропорционально весу. Все операции самодостаточны (не зависят от состояния между ними) — для вставки используются генераторы значений на стороне SQL (`gen_random_uuid`, `NOW()`, `RANDOM()`), для чтения — `ORDER BY RANDOM() LIMIT N`.
 
-```json
-{
-  "operations": [
-    {
-      "name": "insert_client",
-      "weight": 1,
-      "sql": "INSERT INTO client (name, registration_time, is_legal_entity) VALUES ('test-' || gen_random_uuid()::text, NOW(), false)"
-    },
-    {
-      "name": "select_random_client",
-      "weight": 3,
-      "sql": "SELECT * FROM client ORDER BY RANDOM() LIMIT 1"
-    },
-    {
-      "name": "join_client_promotion",
-      "weight": 2,
-      "sql": "SELECT c.client_id, c.name, p.name, p.cost FROM client c LEFT JOIN promotion p ON p.client_id = c.client_id ORDER BY RANDOM() LIMIT 10"
-    }
-  ]
+Пример `src/scenarios.py`:
+
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class Op:
+    name: str
+    weight: int
+    sql: str
+
+SCENARIOS: dict[str, list[Op]] = {
+    "basic": [
+        Op("insert_client", 1, """
+            INSERT INTO client (name, registration_time, is_legal_entity)
+            VALUES ('test-' || gen_random_uuid()::text, NOW(), false)
+        """),
+        Op("select_random_client", 3,
+            "SELECT * FROM client ORDER BY RANDOM() LIMIT 1"),
+        Op("join_client_promotion", 2, """
+            SELECT c.client_id, c.name, p.name, p.cost
+            FROM client c
+            LEFT JOIN promotion p ON p.client_id = c.client_id
+            ORDER BY RANDOM() LIMIT 10
+        """),
+    ],
+    # "read_heavy": [...], "write_heavy": [...]
 }
 ```
 
-Можно держать несколько сценариев: `basic.json`, `read_heavy.json`, `write_heavy.json` — и переключать флагом `--scenario`.
+Добавить новый сценарий = добавить ключ в словарь и пересобрать.
 
 ## Схема результатов
 
-Новый файл `test-results-db-ddl.sql`:
+Новый файл `test-db-ddl.sql`:
 
 ```sql
 CREATE TABLE test_run (
@@ -113,17 +123,29 @@ CREATE TABLE test_worker_result (
 );
 ```
 
+## Параметры подключения
+
+Прокидываются через env vars (экспортируются `devShell`-ом из `server-config.nix`):
+
+| Env var | Источник в `server-config.nix` |
+|---|---|
+| `PGHOST` | `pg-socket-dir` |
+| `PGUSER` | `db-user` |
+| `PRODUCTION_DB` | `production-db-name` |
+| `TEST_DB` | `test-db-name` |
+
+Python читает их через `os.environ` (или `os.getenv`).
+
 ## Nix-интеграция
 
 - `python/project.nix` — derivation через `pkgs.python3Packages.buildPythonApplication`
-- Зависимости: `asyncpg`, `click` (CLI)
-- Доступ к параметрам подключения — через переменные окружения, экспортируемые из `server-config.nix` (host = `pg-socket-dir`, user = `db-user`, БД для нагрузки = `promotions-db-name`, БД для результатов = `test-results-db-name`)
-- В [flake.nix](flake.nix): добавить пакет в `devShells.default.buildInputs`
+- Зависимости: `asyncpg`
+- В [flake.nix](flake.nix): добавить пакет в `devShells.default.buildInputs` и экспорт env vars (см. выше) в `mkShell.shellHook` или через `env`
 - Бинарник `db-tester` доступен в `nix develop`
 
 ## PHP-интеграция
 
-Добавить страницу `php/src/tests.php`, подключается к `test-results-db`:
+Добавить страницу `php/src/tests.php`, подключается к `test-db`:
 - Список последних 20 прогонов: дата, воркеры, операций всего, длительность, ошибок
 - Клик по прогону → таблица `test_worker_result` для этого `run_id`
 - Только таблицы, без графиков
@@ -137,14 +159,3 @@ Python — отдельные правила в [FORMATTING.md](FORMATTING.md) (
 - snake_case для всего
 - Type hints обязательны
 - Форматтер — `ruff format`
-
-## закрытые вопросы
-
-тесты конфигурируем через файл, формат определи здесь:
-...
-
-один пул соединений на все воркеры
-
-меряем задержки через asyncpg
-
-таблиц будет достаточно, но можно попробовать в дальнейшем сделать графики, если это не слишком добавит сложности проекту

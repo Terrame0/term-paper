@@ -22,7 +22,7 @@ with server-config; let
       (
         lib.mapAttrsToList
         (name: value: "env[${name}] = ${value}")
-        server-config
+        server-config.env-vars
       )
     )
   );

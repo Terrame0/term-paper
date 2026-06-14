@@ -1,16 +1,14 @@
 <?php
 
 // -- db connection
-$host = 'localhost';
-$port = '5432';
-$db   = 'test';
-$user = 'terrame';
-$pass = '';
+$host = getenv('PGHOST');
+$user = getenv('PGUSER');
+$db   = getenv('PRODUCTION_DB');
 
-$dsn = "pgsql:host=$host;port=$port;dbname=$db";
+$dsn = "pgsql:host=$host;dbname=$db";
 
 try {
-  $pdo = new PDO($dsn, $user, $pass, [
+  $pdo = new PDO($dsn, $user, '', [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
   ]);
 } catch (PDOException $e) {
@@ -45,6 +43,15 @@ body {
   padding: 20px;
 }
 
+.nav {
+  margin-bottom: 20px;
+}
+
+.nav a {
+  color: #7cc7ff;
+  margin-right: 16px;
+}
+
 .table {
   border: 1px solid #333;
   margin-bottom: 20px;
@@ -74,7 +81,12 @@ body {
 
 <body>
 
-<h1>PostgreSQL pg_catalog schema: <?= htmlspecialchars($db) ?></h1>
+<div class="nav">
+  <a href="/src/main.php">schema</a>
+  <a href="/src/tests.php">tests</a>
+</div>
+
+<h1>PostgreSQL schema: <?= htmlspecialchars($db) ?></h1>
 
 <?php foreach ($tables as $table): ?>
 

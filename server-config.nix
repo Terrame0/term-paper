@@ -9,7 +9,8 @@ rec {
   pg-log = "${pg-dir}/pg.log";
   pg-pid = "${pg-dir}/pg.pid";
   db-user = "main-user";
-  db-name = "test";
+  production-db-name = "production-db";
+  test-db-name = "test-db";
 
   # -- nginx parameters
   ngx-server-name = "term-paper";
@@ -24,4 +25,12 @@ rec {
   fpm-socket = "${php-dir}/fpm.sock";
   fpm-log = "${php-dir}/fpm.log";
   fpm-pid = "${php-dir}/fpm.pid";
+
+  # -- normalized env vars (consumed by php-fpm + devShell + python)
+  env-vars = {
+    PGHOST = pg-socket-dir;
+    PGUSER = db-user;
+    PRODUCTION_DB = production-db-name;
+    TEST_DB = test-db-name;
+  };
 }

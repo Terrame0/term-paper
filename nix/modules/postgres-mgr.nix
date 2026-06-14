@@ -10,7 +10,7 @@ with server-config;
     deps = [
       pkgs.postgresql
     ];
-    scripts = (my-lib.mk-worker-scripts {
+    scripts = my-lib.mk-worker-scripts {
       name = "postgres";
       init-command = ''
         initdb -D "${pg-data-dir}"
@@ -31,13 +31,5 @@ with server-config;
         pg_ctl -D "${pg-data-dir}" stop
       '';
       pid-file = pg-pid;
-    }) // {
-      init-db = ''
-        postgres-start
-        createuser -h "${pg-socket-dir}" ${db-user}
-        createdb -h "${pg-socket-dir}" -O ${db-user} ${db-name}
-        psql -h "${pg-socket-dir}" -U ${db-user} -d ${db-name}
-        postgres-stop
-      '';
     };
   }

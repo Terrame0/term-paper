@@ -1,0 +1,17 @@
+[project]
+name = "db-tester"
+version = "0.1.0"
+description = "concurrent postgres load tester for term-paper"
+requires-python = ">=3.11"
+dependencies = ["asyncpg"]
+
+[project.scripts]
+db-tester = "main:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["main", "scenarios"]

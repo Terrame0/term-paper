@@ -10,6 +10,7 @@
     system = "x86_64-linux";
     pkgs = import nixpkgs {inherit system;};
     lib = pkgs.lib;
+    server-config = import ./server-config.nix;
     my-lib =
       lib.foldl (acc: path: acc // (import path args)) {}
       (lib.filesystem.listFilesRecursive ./nix/my-lib);
@@ -19,12 +20,13 @@
       inherit my-lib;
     };
     pgschema = import ./nix/modules/pgschema.nix args;
+    db-tester = import ./python/project.nix args;
     modules = lib.forEach (lib.filesystem.listFilesRecursive ./nix/modules) (
       path:
         import path ({
-            server-config = import ./server-config.nix;
+            inherit server-config;
             tmp-dir = "/tmp/term-project";
-            
+
             flake-root = lib.traceValSeq self.outPath;
           }
           // args)
@@ -49,7 +51,12 @@
   in {
     devShells.${system}.default = pkgs.mkShell {
       name = "web-stack";
-      buildInputs = [server pkgs.postgresql pgschema] ++ modules;
+      buildInputs = [server pkgs.postgresql pgschema db-tester] ++ modules;
+      shellHook = lib.concatStringsSep "\n" (
+        lib.mapAttrsToList
+        (name: value: ''export ${name}="${value}"'')
+        server-config.env-vars
+      );
     };
   };
 }
