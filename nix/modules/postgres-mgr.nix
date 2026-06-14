@@ -2,7 +2,6 @@
   pkgs,
   my-lib,
   server-config,
-  pgschema,
   ...
 }:
 with server-config;
@@ -17,7 +16,8 @@ with server-config;
         initdb -D "${pg-data-dir}"
         mkdir -p "${pg-socket-dir}"
         {
-          echo "listen_addresses = ' '";
+          echo "listen_addresses = 'localhost'";
+          echo "port = 5432";
           echo "unix_socket_directories = '${pg-socket-dir}'";
           echo "unix_socket_permissions = 0700";
           echo "external_pid_file = '${pg-pid}'";
@@ -36,7 +36,7 @@ with server-config;
         postgres-start
         createuser -h "${pg-socket-dir}" ${db-user}
         createdb -h "${pg-socket-dir}" -O ${db-user} ${db-name}
-        psql -h "${pg-socket-dir}" -U ${db-user} -d ${db-name} -f ${pgschema}
+        psql -h "${pg-socket-dir}" -U ${db-user} -d ${db-name}
         postgres-stop
       '';
     };
