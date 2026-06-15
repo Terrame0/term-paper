@@ -34,49 +34,7 @@ $tables = $tables_stmt->fetchAll(PDO::FETCH_COLUMN);
 <head>
 <meta charset="UTF-8">
 <title>PG catalog schema viewer</title>
-
-<style>
-body {
-  font-family: monospace;
-  background: #0f1115;
-  color: #d6d6d6;
-  padding: 20px;
-}
-
-.nav {
-  margin-bottom: 20px;
-}
-
-.nav a {
-  color: #7cc7ff;
-  margin-right: 16px;
-}
-
-.table {
-  border: 1px solid #333;
-  margin-bottom: 20px;
-  padding: 10px;
-  border-radius: 6px;
-  background: #151922;
-}
-
-.table h2 {
-  margin: 0 0 10px 0;
-  color: #7cc7ff;
-}
-
-.col {
-  padding: 2px 0;
-}
-
-.type {
-  color: #8bdc8b;
-}
-
-.null {
-  color: #888;
-}
-</style>
+<link rel="stylesheet" href="/src/style.css">
 </head>
 
 <body>

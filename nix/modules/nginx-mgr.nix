@@ -19,6 +19,8 @@ with server-config; let
       pid ${ngx-pid};
       events {}
       http {
+        include ${pkgs.nginx}/conf/mime.types;
+        default_type application/octet-stream;
         access_log ${ngx-hist};
         server {
           location / {

@@ -15,50 +15,76 @@ try {
   die("DB connection failed: " . $e->getMessage());
 }
 
-// -- selected run (from ?run_id=N)
-$selected_run_id = isset($_GET['run_id']) ? (int) $_GET['run_id'] : null;
+// -- parse postgres array literal '{10,30,90}' -> [10, 30, 90]
+function pg_array_to_ints(string $s): array {
+  $inner = trim($s, '{}');
+  if ($inner === '') return [];
+  return array_map('intval', explode(',', $inner));
+}
 
-// -- last 20 runs
-$runs_stmt = $pdo->query("
-  SELECT run_id, started_at, finished_at, worker_count,
-         ops_per_worker, total_duration_ms, errors_count
-  FROM test_run
-  ORDER BY run_id DESC
-  LIMIT 20
+// -- CLI param name -> test_cell column name
+$axis_to_col = [
+  'workers'        => 'worker_count',
+  'ops_per_worker' => 'ops_per_worker',
+  'prefill'        => 'prefill_rows',
+];
+
+// -- list of tests
+$tests_stmt = $pdo->query("
+  SELECT test_id, started_at, finished_at, scenario
+  FROM test
+  ORDER BY test_id DESC
+  LIMIT 50
 ");
-$runs = $runs_stmt->fetchAll(PDO::FETCH_ASSOC);
+$tests = $tests_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// -- scaling data: aggregated per worker_count across all runs
-$scaling_stmt = $pdo->query("
-  SELECT
-    r.worker_count,
-    AVG(w.latency_p50_ms)::float AS p50,
-    AVG(w.latency_p95_ms)::float AS p95,
-    AVG(w.latency_p99_ms)::float AS p99,
-    AVG((r.worker_count * r.ops_per_worker * 1000.0)
-        / NULLIF(r.total_duration_ms, 0))::float AS ops_per_sec
-  FROM test_run r
-  JOIN test_worker_result w ON w.run_id = r.run_id
-  GROUP BY r.worker_count
-  ORDER BY r.worker_count
-");
-$scaling = $scaling_stmt->fetchAll(PDO::FETCH_ASSOC);
+$selected_id = isset($_GET['test_id']) ? (int) $_GET['test_id'] : null;
+if ($selected_id === null && !empty($tests)) {
+  $selected_id = (int) $tests[0]['test_id'];
+}
 
-// -- worker results for selected run
-$workers = [];
-if ($selected_run_id !== null) {
-  $w_stmt = $pdo->prepare("
-    SELECT worker_id, ops_completed,
-           latency_p50_ms::float AS p50,
-           latency_p95_ms::float AS p95,
-           latency_p99_ms::float AS p99,
-           errors
-    FROM test_worker_result
-    WHERE run_id = :run_id
-    ORDER BY worker_id
+$selected_test = null;
+$sweeps = [];
+if ($selected_id !== null) {
+  foreach ($tests as $t) {
+    if ((int) $t['test_id'] === $selected_id) {
+      $selected_test = $t;
+      break;
+    }
+  }
+  $s_stmt = $pdo->prepare("
+    SELECT sweep_id, x_axis, y_axis, x_values, y_values,
+           fixed_param, fixed_value
+    FROM test_sweep
+    WHERE test_id = :tid
+    ORDER BY sweep_id
   ");
-  $w_stmt->execute(['run_id' => $selected_run_id]);
-  $workers = $w_stmt->fetchAll(PDO::FETCH_ASSOC);
+  $s_stmt->execute(['tid' => $selected_id]);
+  $sweeps = $s_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+  $c_stmt = $pdo->prepare("
+    SELECT worker_count, ops_per_worker, prefill_rows,
+           latency_p50_ms::float AS p50,
+           latency_p95_ms::float AS p95
+    FROM test_cell
+    WHERE sweep_id = :sid
+  ");
+  foreach ($sweeps as &$s) {
+    $s['x_values'] = pg_array_to_ints($s['x_values']);
+    $s['y_values'] = pg_array_to_ints($s['y_values']);
+    $c_stmt->execute(['sid' => $s['sweep_id']]);
+    $s['cells'] = $c_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // -- build (x,y) -> cell map for this sweep
+    $x_col = $axis_to_col[$s['x_axis']] ?? $s['x_axis'];
+    $y_col = $axis_to_col[$s['y_axis']] ?? $s['y_axis'];
+    $cmap = [];
+    foreach ($s['cells'] as $c) {
+      $cmap[(int) $c[$x_col] . ',' . (int) $c[$y_col]] = $c;
+    }
+    $s['cell_map'] = $cmap;
+  }
+  unset($s);
 }
 
 ?>
@@ -67,77 +93,8 @@ if ($selected_run_id !== null) {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>db-tester runs</title>
-<script src="/src/assets/chart.js"></script>
-
-<style>
-body {
-  font-family: monospace;
-  background: #0f1115;
-  color: #d6d6d6;
-  padding: 20px;
-}
-
-.nav {
-  margin-bottom: 20px;
-}
-
-.nav a {
-  color: #7cc7ff;
-  margin-right: 16px;
-}
-
-h1, h2 {
-  color: #7cc7ff;
-}
-
-.charts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 24px;
-  margin-bottom: 32px;
-}
-
-.chart-card {
-  background: #151922;
-  border: 1px solid #333;
-  border-radius: 6px;
-  padding: 12px;
-}
-
-.chart-card h2 {
-  margin: 0 0 8px 0;
-  font-size: 14px;
-}
-
-table {
-  border-collapse: collapse;
-  margin-bottom: 24px;
-}
-
-th, td {
-  border: 1px solid #333;
-  padding: 6px 12px;
-  text-align: left;
-}
-
-th {
-  background: #151922;
-  color: #8bdc8b;
-}
-
-tr.selected {
-  background: #1f2630;
-}
-
-a {
-  color: #7cc7ff;
-}
-
-.dim {
-  color: #888;
-}
-</style>
+<title>db-tester</title>
+<link rel="stylesheet" href="/src/style.css">
 </head>
 
 <body>
@@ -149,148 +106,130 @@ a {
 
 <h1>db-tester</h1>
 
-<?php if (count($scaling) < 2): ?>
-  <p class="dim">scaling-графики появятся после ≥2 прогонов с <strong>разным</strong> <code>--workers</code>. Сейчас прогонов с уникальным worker_count: <?= count($scaling) ?>.</p>
+<?php if (empty($tests)): ?>
+  <p class="dim">no tests yet — run
+    <code>db-tester --scenario basic --workers 5-2-4 --ops-per-worker 50-2-4 --prefill 100-10-3</code>
+  </p>
 <?php else: ?>
-<div class="charts">
-  <div class="chart-card">
-    <h2>latency vs concurrency (avg per worker_count)</h2>
-    <canvas id="latency-chart"></canvas>
-  </div>
-  <div class="chart-card">
-    <h2>throughput vs concurrency (ops/sec)</h2>
-    <canvas id="throughput-chart"></canvas>
-  </div>
+
+<form class="controls" method="get">
+  <label for="test_id">test:</label>
+  <select name="test_id" id="test_id" onchange="this.form.submit()">
+    <?php foreach ($tests as $t): ?>
+      <option value="<?= (int) $t['test_id'] ?>" <?= (int) $t['test_id'] === $selected_id ? 'selected' : '' ?>>
+        #<?= (int) $t['test_id'] ?>
+        — <?= htmlspecialchars($t['scenario']) ?>
+        — <?= htmlspecialchars($t['started_at']) ?>
+      </option>
+    <?php endforeach; ?>
+  </select>
+</form>
+
+<?php if ($selected_test !== null): ?>
+
+<div class="test-meta">
+  <div><span class="k">scenario:</span> <?= htmlspecialchars($selected_test['scenario']) ?></div>
+  <div><span class="k">started:</span> <?= htmlspecialchars($selected_test['started_at']) ?></div>
+  <div><span class="k">finished:</span> <?= htmlspecialchars($selected_test['finished_at']) ?></div>
+  <div><span class="k">sweeps:</span> <?= count($sweeps) ?></div>
 </div>
-<?php endif; ?>
 
-<h2>last 20 runs</h2>
+<?php
 
-<?php if (empty($runs)): ?>
-  <p class="dim">no runs yet — run <code>db-tester --workers N --ops-per-worker M --scenario basic</code></p>
+// -- global p95 min/max across all sweeps (shared color scale)
+$all_p95 = [];
+foreach ($sweeps as $sw) {
+  foreach ($sw['cells'] as $c) {
+    if ($c['p95'] !== null) $all_p95[] = (float) $c['p95'];
+  }
+}
+$g_min = !empty($all_p95) ? max(min($all_p95), 0.01) : 0.01;
+$g_max = !empty($all_p95) ? max(max($all_p95), $g_min * 1.01) : 1.0;
+$log_min = log($g_min);
+$log_span = log($g_max) - $log_min;
+
+function color_for(float $v, float $log_min, float $log_span): string {
+  $t = $log_span > 0 ? (log(max($v, 0.01)) - $log_min) / $log_span : 0.0;
+  $t = max(0.0, min(1.0, $t));
+  $hue = (1.0 - $t) * 120.0;
+  return "hsl($hue, 70%, 28%)";
+}
+
+function render_heatmap(array $sweep, float $log_min, float $log_span): void {
+  echo '<div class="heatmap-card">';
+  echo '<table class="heatmap combo">';
+
+  echo '<tr>';
+  echo '<th class="axis-label">' . htmlspecialchars($sweep['y_axis'])
+       . ' \ ' . htmlspecialchars($sweep['x_axis']) . '</th>';
+  foreach ($sweep['x_values'] as $xv) {
+    echo '<th>' . (int) $xv . '</th>';
+  }
+  echo '</tr>';
+
+  foreach ($sweep['y_values'] as $yv) {
+    echo '<tr>';
+    echo '<td class="label">' . (int) $yv . '</td>';
+    foreach ($sweep['x_values'] as $xv) {
+      $key = "$xv,$yv";
+      if (!isset($sweep['cell_map'][$key])) {
+        echo '<td class="missing">·</td>';
+        continue;
+      }
+      $cell = $sweep['cell_map'][$key];
+      $p50 = $cell['p50'] !== null ? (float) $cell['p50'] : null;
+      $p95 = $cell['p95'] !== null ? (float) $cell['p95'] : null;
+      if ($p95 === null) {
+        echo '<td class="missing">·</td>';
+        continue;
+      }
+      $bg = color_for($p95, $log_min, $log_span);
+      echo '<td style="background:' . $bg . ';color:#fff">';
+      echo '<div class="p95">' . number_format($p95, 1) . '</div>';
+      if ($p50 !== null) {
+        echo '<div class="p50">' . number_format($p50, 1) . '</div>';
+      }
+      echo '</td>';
+    }
+    echo '</tr>';
+  }
+
+  echo '</table>';
+  echo '</div>';
+}
+
+?>
+
+<?php if (empty($sweeps)): ?>
+  <p class="dim">test has no sweeps</p>
 <?php else: ?>
-<table>
-  <tr>
-    <th>run</th>
-    <th>started</th>
-    <th>workers</th>
-    <th>ops/worker</th>
-    <th>total ops</th>
-    <th>duration ms</th>
-    <th>errors</th>
-  </tr>
-<?php foreach ($runs as $r): ?>
-  <tr class="<?= $selected_run_id === (int) $r['run_id'] ? 'selected' : '' ?>">
-    <td><a href="?run_id=<?= (int) $r['run_id'] ?>">#<?= (int) $r['run_id'] ?></a></td>
-    <td><?= htmlspecialchars($r['started_at']) ?></td>
-    <td><?= (int) $r['worker_count'] ?></td>
-    <td><?= (int) $r['ops_per_worker'] ?></td>
-    <td><?= (int) $r['worker_count'] * (int) $r['ops_per_worker'] ?></td>
-    <td><?= (int) $r['total_duration_ms'] ?></td>
-    <td><?= (int) $r['errors_count'] ?></td>
-  </tr>
-<?php endforeach; ?>
-</table>
-<?php endif; ?>
-
-<?php if ($selected_run_id !== null): ?>
-  <h2>run #<?= (int) $selected_run_id ?>: per-worker</h2>
-  <?php if (empty($workers)): ?>
-    <p class="dim">no worker results for this run</p>
-  <?php else: ?>
-  <div class="charts">
-    <div class="chart-card">
-      <h2>latency per worker</h2>
-      <canvas id="worker-chart"></canvas>
-    </div>
+  <div class="legend">
+    <span>p95 colour scale (log):</span>
+    <span class="scale-bar">
+      <span style="background: <?= color_for($g_min, $log_min, $log_span) ?>;"></span>
+      <span style="background: <?= color_for(sqrt($g_min * $g_max), $log_min, $log_span) ?>;"></span>
+      <span style="background: <?= color_for($g_max, $log_min, $log_span) ?>;"></span>
+    </span>
+    <span><?= number_format($g_min, 2) ?> ms → <?= number_format($g_max, 2) ?> ms</span>
+    <span class="dim">·  each cell: <b>p95</b> on top, p50 below</span>
   </div>
-  <table>
-    <tr>
-      <th>worker</th>
-      <th>ops</th>
-      <th>p50 ms</th>
-      <th>p95 ms</th>
-      <th>p99 ms</th>
-      <th>errors</th>
-    </tr>
-  <?php foreach ($workers as $w): ?>
-    <tr>
-      <td><?= (int) $w['worker_id'] ?></td>
-      <td><?= (int) $w['ops_completed'] ?></td>
-      <td><?= number_format($w['p50'], 2) ?></td>
-      <td><?= number_format($w['p95'], 2) ?></td>
-      <td><?= number_format($w['p99'], 2) ?></td>
-      <td><?= (int) $w['errors'] ?></td>
-    </tr>
+  <?php foreach ($sweeps as $sweep): ?>
+    <div class="sweep-block">
+      <h2>
+        <?= htmlspecialchars($sweep['x_axis']) ?> ×
+        <?= htmlspecialchars($sweep['y_axis']) ?>
+        <span class="dim">
+          (<?= htmlspecialchars($sweep['fixed_param']) ?>
+          = <?= (int) $sweep['fixed_value'] ?>)
+        </span>
+      </h2>
+      <?php render_heatmap($sweep, $log_min, $log_span); ?>
+    </div>
   <?php endforeach; ?>
-  </table>
-  <?php endif; ?>
 <?php endif; ?>
 
-<script>
-  // -- dark theme defaults
-  Chart.defaults.color = '#d6d6d6';
-  Chart.defaults.borderColor = '#333';
-
-  const scaling = <?= json_encode($scaling) ?>;
-  const workers = <?= json_encode($workers) ?>;
-
-  if (scaling.length >= 2) {
-    new Chart(document.getElementById('latency-chart'), {
-      type: 'line',
-      data: {
-        labels: scaling.map(s => s.worker_count),
-        datasets: [
-          { label: 'p50', data: scaling.map(s => s.p50), borderColor: '#8bdc8b' },
-          { label: 'p95', data: scaling.map(s => s.p95), borderColor: '#dcc78b' },
-          { label: 'p99', data: scaling.map(s => s.p99), borderColor: '#dc8b8b' },
-        ],
-      },
-      options: {
-        scales: {
-          x: { title: { display: true, text: 'workers' } },
-          y: { title: { display: true, text: 'latency, ms' }, beginAtZero: true },
-        },
-      },
-    });
-
-    new Chart(document.getElementById('throughput-chart'), {
-      type: 'line',
-      data: {
-        labels: scaling.map(s => s.worker_count),
-        datasets: [
-          { label: 'ops/sec', data: scaling.map(s => s.ops_per_sec), borderColor: '#7cc7ff' },
-        ],
-      },
-      options: {
-        scales: {
-          x: { title: { display: true, text: 'workers' } },
-          y: { title: { display: true, text: 'ops/sec' }, beginAtZero: true },
-        },
-      },
-    });
-  }
-
-  if (workers.length > 0) {
-    new Chart(document.getElementById('worker-chart'), {
-      type: 'bar',
-      data: {
-        labels: workers.map(w => 'w' + w.worker_id),
-        datasets: [
-          { label: 'p50', data: workers.map(w => w.p50), backgroundColor: '#8bdc8b' },
-          { label: 'p95', data: workers.map(w => w.p95), backgroundColor: '#dcc78b' },
-          { label: 'p99', data: workers.map(w => w.p99), backgroundColor: '#dc8b8b' },
-        ],
-      },
-      options: {
-        scales: {
-          x: { title: { display: true, text: 'worker' } },
-          y: { title: { display: true, text: 'latency, ms' }, beginAtZero: true },
-        },
-      },
-    });
-  }
-</script>
+<?php endif; ?>
+<?php endif; ?>
 
 </body>
 </html>

@@ -26,7 +26,6 @@
         import path ({
             inherit server-config;
             tmp-dir = "/tmp/term-project";
-
             flake-root = lib.traceValSeq self.outPath;
           }
           // args)
