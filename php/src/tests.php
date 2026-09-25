@@ -136,7 +136,6 @@ if ($selected_id !== null) {
 
 <?php
 
-// -- global p95 min/max across all sweeps (shared color scale)
 $all_p95 = [];
 foreach ($sweeps as $sw) {
   foreach ($sw['cells'] as $c) {
@@ -149,10 +148,12 @@ $log_min = log($g_min);
 $log_span = log($g_max) - $log_min;
 
 function color_for(float $v, float $log_min, float $log_span): string {
-  $t = $log_span > 0 ? (log(max($v, 0.01)) - $log_min) / $log_span : 0.0;
+  $t = $log_span > 0
+    ? (log(max($v, 0.01)) - $log_min) / $log_span
+    : 0.0;
   $t = max(0.0, min(1.0, $t));
-  $hue = (1.0 - $t) * 120.0;
-  return "hsl($hue, 70%, 28%)";
+  $lightness = 95 - $t * 45;
+  return "hsl(210, 30%, {$lightness}%)";
 }
 
 function render_heatmap(array $sweep, float $log_min, float $log_span): void {
@@ -184,7 +185,7 @@ function render_heatmap(array $sweep, float $log_min, float $log_span): void {
         continue;
       }
       $bg = color_for($p95, $log_min, $log_span);
-      echo '<td style="background:' . $bg . ';color:#fff">';
+      echo '<td style="background:' . $bg . ';color:#000">';
       echo '<div class="p95">' . number_format($p95, 1) . '</div>';
       if ($p50 !== null) {
         echo '<div class="p50">' . number_format($p50, 1) . '</div>';

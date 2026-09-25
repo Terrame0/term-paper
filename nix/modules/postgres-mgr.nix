@@ -16,7 +16,7 @@ with server-config;
         initdb -D "${pg-data-dir}"
         mkdir -p "${pg-socket-dir}"
         {
-          echo "listen_addresses = 'localhost'";
+          echo "listen_addresses = '127.0.0.1,::1'";
           echo "port = 5432";
           echo "unix_socket_directories = '${pg-socket-dir}'";
           echo "unix_socket_permissions = 0700";

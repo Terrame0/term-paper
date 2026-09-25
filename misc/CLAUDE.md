@@ -151,6 +151,7 @@ URL префикс `/src/` — потому что nginx `root` указывае
 2. **MIME-types.** Без `include ${pkgs.nginx}/conf/mime.types` nginx отдаёт `.css` как `text/plain` и браузер игнорирует стили. Включено в `nginx-mgr.nix`.
 3. **PHP-store-path меняется при правке `.php`.** `nix develop` пересобирает `php-server` derivation, но **уже работающий** nginx указывает на старый store-path. После правки `.php`/`.css` нужно `server-stop && server-start` (или хотя бы `nginx-stop && nginx-start`).
 4. **`/tmp/term-paper` имя БД.** Если в `server-config.nix` поменять `production-db-name` — старая БД остаётся в кластере. `pgschema apply` создаст новую, но мусор копится. Чистка — снести `/tmp/term-paper` или вручную `DROP DATABASE`.
+5. **`listen_addresses` и `localhost`.** `postgres-mgr.nix` жёстко биндит `listen_addresses = '127.0.0.1,::1'`, а не `'localhost'`. На этой машине `localhost` резолвится только в `::1` (`getent hosts localhost`), поэтому `'localhost'` даёт непредсказуемый листенер (только IPv6), и `psql -h 127.0.0.1` падает с `connection refused`. Явные адреса гарантируют оба loopback-семейства. Штатный доступ проекта — через unix-сокет (`PGHOST = pg-socket-dir`), TCP нужен только для ручного `psql -h`.
 
 ## Где смотреть дальше
 

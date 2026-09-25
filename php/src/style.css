@@ -1,27 +1,54 @@
 body {
   font-family: monospace;
-  background: #0f1115;
-  color: #d6d6d6;
+  background: #f7f7f7;
+  color: #222;
   padding: 20px;
 }
 
-.nav { margin-bottom: 20px; }
-.nav a { color: #7cc7ff; margin-right: 16px; }
+.nav {
+  margin-bottom: 20px;
+}
 
-h1, h2, h3 { color: #7cc7ff; }
-h2 { margin-top: 28px; font-size: 16px; }
-h3 { margin: 12px 0 6px; font-size: 13px; color: #8bdc8b; }
+.nav a {
+  color: #005a9c;
+  margin-right: 16px;
+  text-decoration: none;
+}
 
-.dim { color: #888; }
+.nav a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3 {
+  color: #1f4e79;
+}
+
+h2 {
+  margin-top: 28px;
+  font-size: 16px;
+}
+
+h3 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  color: #2e7d32;
+}
+
+.dim {
+  color: #666;
+}
 
 /* -- main.php: schema viewer */
 
 .table {
-  border: 1px solid #333;
+  border: 1px solid #d0d0d0;
   margin-bottom: 20px;
   padding: 10px;
   border-radius: 6px;
-  background: #151922;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .table h2 {
@@ -29,9 +56,17 @@ h3 { margin: 12px 0 6px; font-size: 13px; color: #8bdc8b; }
   font-size: 14px;
 }
 
-.col { padding: 2px 0; }
-.type { color: #8bdc8b; }
-.null { color: #888; }
+.col {
+  padding: 2px 0;
+}
+
+.type {
+  color: #2e7d32;
+}
+
+.null {
+  color: #777;
+}
 
 /* -- tests.php: test runs */
 
@@ -44,25 +79,33 @@ h3 { margin: 12px 0 6px; font-size: 13px; color: #8bdc8b; }
 }
 
 select {
-  background: #151922;
-  color: #d6d6d6;
-  border: 1px solid #333;
+  background: #fff;
+  color: #222;
+  border: 1px solid #c8c8c8;
   padding: 6px 8px;
   font-family: monospace;
+  border-radius: 4px;
 }
 
 .test-meta {
-  background: #151922;
-  border: 1px solid #333;
+  background: #fff;
+  border: 1px solid #d0d0d0;
   padding: 10px 14px;
   border-radius: 6px;
   margin-bottom: 18px;
 }
 
-.test-meta div { padding: 2px 0; }
-.test-meta .k { color: #888; }
+.test-meta div {
+  padding: 2px 0;
+}
 
-.sweep-block { margin-bottom: 28px; }
+.test-meta .k {
+  color: #666;
+}
+
+.sweep-block {
+  margin-bottom: 28px;
+}
 
 .heatmap-pair {
   display: grid;
@@ -71,16 +114,20 @@ select {
 }
 
 .heatmap-card {
-  background: #151922;
-  border: 1px solid #333;
+  background: #fff;
+  border: 1px solid #d0d0d0;
   border-radius: 6px;
   padding: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
-table.heatmap { border-collapse: collapse; }
+table.heatmap {
+  border-collapse: collapse;
+}
 
-table.heatmap th, table.heatmap td {
-  border: 1px solid #333;
+table.heatmap th,
+table.heatmap td {
+  border: 1px solid #d0d0d0;
   padding: 8px 10px;
   text-align: center;
   font-size: 12px;
@@ -88,24 +135,28 @@ table.heatmap th, table.heatmap td {
 }
 
 table.heatmap th {
-  background: #0f1115;
-  color: #8bdc8b;
-  font-weight: normal;
+  background: #eef3f8;
+  color: #1f4e79;
+  font-weight: 600;
 }
 
 table.heatmap th.axis-label {
   background: transparent;
-  color: #888;
+  color: #666;
   border: none;
   font-style: italic;
 }
 
 table.heatmap td.label {
-  background: #0f1115;
-  color: #8bdc8b;
+  background: #f5f7fa;
+  color: #1f4e79;
+  font-weight: 600;
 }
 
-table.heatmap td.missing { color: #444; background: #0f1115; }
+table.heatmap td.missing {
+  color: #aaa;
+  background: #fafafa;
+}
 
 table.heatmap.combo td {
   min-width: 64px;
@@ -122,7 +173,7 @@ table.heatmap.combo td .p95 {
 table.heatmap.combo td .p50 {
   font-size: 10px;
   line-height: 1.15;
-  opacity: 0.7;
+  opacity: 0.75;
 }
 
 .legend {
@@ -132,12 +183,12 @@ table.heatmap.combo td .p50 {
   gap: 10px;
   margin: 14px 0 18px;
   font-size: 12px;
-  color: #aaa;
+  color: #666;
 }
 
 .legend .scale-bar {
   display: inline-flex;
-  border: 1px solid #333;
+  border: 1px solid #d0d0d0;
   border-radius: 3px;
   overflow: hidden;
 }
